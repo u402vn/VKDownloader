@@ -22,16 +22,8 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="vk.py" />
     <Compile Include="vkontakte.py" />
     <Compile Include="vk_auth.py" />
-    <Compile Include="vk_db.py" />
-    <Compile Include="vk_load.py" />
-    <Compile Include="vk_load_comments.py" />
-    <Compile Include="vk_load_community.py" />
-    <Compile Include="vk_load_posts.py" />
-    <Compile Include="vk_load_users.py" />
-    <Compile Include="vk_utils.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
