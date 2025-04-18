@@ -159,8 +159,6 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
 
     
 def download_and_save_posts(conn, community_id, community_name, offset):
-    cur = conn.cursor()
-
     url = f"https://api.vk.com/method/wall.get?domain={community_name}&offset={offset}&count={limit_post_count}&access_token={auth_token}&v=5.199"
     src = load_url_as_json(url)
 
@@ -168,6 +166,7 @@ def download_and_save_posts(conn, community_id, community_name, offset):
     if not check_for_errors(src, error_info):
         raise Exception(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
 
+    cur = conn.cursor()
     post_json_data_collection = __getValue(src, 'response/items')
     for post_json_data in post_json_data_collection:
         post_vk_id = __getValue(post_json_data, "id")
@@ -197,30 +196,60 @@ def download_and_save_posts(conn, community_id, community_name, offset):
 
 
 
-def download_and_save_community(conn, community_id, community_name):
+def download_and_save_community(conn, community_name):
     print(f"Начало загрузки паблика {community_name}")
-    cursor = conn.cursor()
-    offset = 0;
+
+    url = f"https://api.vk.com/method/groups.getById?group_id={community_name}&access_token={auth_token}&v=5.199"
+    src = load_url_as_json(url)
+
+    error_info = []
+    if not check_for_errors(src, error_info):
+        raise Exception(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
+
+    group_json_data_collection = __getValue(src, 'response/groups')
+    if len(group_json_data_collection) == 0:
+        return # не нашли ?
+
+    group_json_data = group_json_data_collection[0]
+    description = __getValue(group_json_data, 'name')
+    group_id = - __getValue(group_json_data, 'id', 0)
+
+    cur = conn.cursor()
+    cur.execute("SELECT id, top_post_date FROM communities WHERE name = %s", (community_name,) )
+    community_id, top_post_date = cur.fetchone()
+    if not top_post_date:
+        top_post_date = datetime(1900, 1, 1, 1, 1, 1)
+    cur.execute("SELECT COUNT(*) FROM posts p WHERE p.vk_owner_id = %s AND p.date > %s ", (group_id, top_post_date) )
+    offset, = cur.fetchone()
+
+    offset = offset - 100; # перестраховываемся, начиная качать не с самого конца
+    if offset < 0:
+        offset = 0
     while True:
         loadedPostsCount = download_and_save_posts(conn, community_id, community_name, offset)
         conn.commit()
         offset += limit_post_count
         if loadedPostsCount < limit_post_count:
-            return
+            break
+
+
+    cur.execute("SELECT max(date), count(*) FROM posts WHERE vk_owner_id = %s", (group_id,) )
+    top_post_date, post_count = cur.fetchone()
 
     last_update = datetime.now()
-    cursor.execute(f'UPDATE communities SET last_update = %s WHERE id = %s', (last_update, community_id) )        
+    cur.execute(f'UPDATE communities SET last_update = %s, top_post_date =  %s, post_count = %s, description = %s, vk_id = %s WHERE name = %s', 
+                (last_update, top_post_date, post_count, description, group_id, community_name) )        
     conn.commit()
     print(f"Загрузка паблика {community_name} завершена")
 
 
 def download_and_save_coomunities(conn):
     cur = conn.cursor()    
-    cur.execute("SELECT id, name FROM communities ORDER BY last_update, id ")
+    cur.execute("SELECT name FROM communities ORDER BY last_update, id ")
 
     rows = cur.fetchall()
-    for community_id, community_name in rows:
-        download_and_save_community(conn, community_id, community_name)
+    for community_name, in rows:
+        download_and_save_community(conn, community_name)
 
 
 def main():
