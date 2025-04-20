@@ -22,16 +22,19 @@ user_all_fields = f"{user_base_fields},{user_optional_fields_L_R},{user_optional
 def check_for_errors(datas, error_info) -> bool:
     if not "error" in datas:
         return True
-    
     # декомпозируем код и текст ошибки
     error_info.append(datas["error"]["error_code"])
     error_info.append(datas["error"]["error_msg"])
     return False
 
+
+
 def check_for_errors_with_exception(datas):
     error_info = []
     if not check_for_errors(datas, error_info):
         raise Exception(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
+
+
 
 def load_url_as_json(url: str) -> str:
     try:    
@@ -40,6 +43,7 @@ def load_url_as_json(url: str) -> str:
         return req.json()
     except Exception as e:
         return f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}'
+
 
      
 def __getValue(json, path: str, defaultValue = ''):
@@ -56,6 +60,7 @@ def __getValue(json, path: str, defaultValue = ''):
         if key2 in node:
             value = node[key2]				
     return value
+
 
 
 def download_and_save_user(cur, vk_user_id):
@@ -112,8 +117,6 @@ def download_and_save_user(cur, vk_user_id):
 
 
 
-
-
 def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
     if vk_comment_id:
         cur.execute("""SELECT 1 FROM likes WHERE vk_user_id = %s AND vk_owner_id = %s AND vk_post_id IS NULL AND vk_comment_id = %s""", 
@@ -126,6 +129,7 @@ def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
     download_and_save_user(cur, vk_user_id)
     cur.execute("""INSERT INTO likes (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) VALUES (%s, %s, %s, %s)""",
                 (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) )
+
 
 
 def download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id):
@@ -167,6 +171,7 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
         if loadedLikesCount < limit_likes_count:
             return
         offset += limit_likes_count
+
 
 
 def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_id: int = 0):
@@ -230,12 +235,17 @@ def download_and_save_posts(conn, community_id, community_name, offset):
     if not check_for_errors(src, error_info):
         raise Exception(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
 
+    earliest_post_date = None
+
     cur = conn.cursor()
     post_json_data_collection = __getValue(src, 'response/items')
     for post_json_data in post_json_data_collection:
         post_vk_id = __getValue(post_json_data, "id")
         post_vk_owner_id = __getValue(post_json_data, "owner_id")
         post_date =  datetime.fromtimestamp(post_json_data["date"])
+
+        if (not earliest_post_date) or (earliest_post_date > post_date):
+            earliest_post_date = post_date
 
         cur.execute("""SELECT 1 FROM posts WHERE community_id=%s AND vk_id=%s AND vk_owner_id=%s""", (community_id, post_vk_id, post_vk_owner_id) )
         if cur.rowcount == 0:
@@ -261,7 +271,9 @@ def download_and_save_posts(conn, community_id, community_name, offset):
             print(f"+ Загрузка комментариев к посту")
             download_and_save_comments(cur, community_id, post_vk_owner_id, post_vk_id)
         conn.commit()
-    return len(post_json_data_collection)
+    return len(post_json_data_collection), earliest_post_date
+
+
 
 def download_and_save_community_members(cur, vk_owner_id):
     print(f"+ Загрузка подписчиков группы {vk_owner_id}")
@@ -316,9 +328,11 @@ def download_and_save_community(conn, community_name):
     if offset < 0:
         offset = 0
     while True:
-        loadedPostsCount = download_and_save_posts(conn, community_id, community_name, offset)
+        loadedPostsCount, earliestPostDate = download_and_save_posts(conn, community_id, community_name, offset)
         conn.commit()
         if loadedPostsCount < limit_post_count:
+            break
+        if earliestPostDate < top_post_date:
             break
         offset += limit_post_count
 
@@ -335,7 +349,7 @@ def download_and_save_community(conn, community_name):
 
 def download_and_save_coomunities(conn):
     cur = conn.cursor()    
-    cur.execute("SELECT name FROM communities ORDER BY last_update, id ")
+    cur.execute("SELECT name FROM communities ORDER BY last_update ASC NULLS FIRST, id DESC")
 
     rows = cur.fetchall()
     for community_name, in rows:
