@@ -10,7 +10,7 @@ urllib3.disable_warnings()
 limit_post_count = 30
 limit_comments_count = 50
 limit_likes_count = 100
-limit_members_count = 100
+limit_members_count = 30
 
 user_base_fields = "id,first_name,last_name,deactivated,is_closed,can_access_closed,about,activities,bdate,blacklisted,blacklisted_by_me,bookscan_post,can_see_all_post,scan_see_au         dio,can_send_friend_request,can_write_private_message,career,city,common_count,connections,contacts,counters,country,crop_photo,domain,education,exports,,followers_count,friend_status,games,has_mobile,has_photo,home_town,interests,is_favorite,is_friend,is_hidden_from_feed,is_no_index"
 user_optional_fields_L_R = "last_seen,lists,maiden_name,military,movies,music,nickname,occupation,online,personal,photo_50,photo_100,photo_200_orig,photo_200,photo_400_orig,photo_id,photo_max,photo_max_orig,quotes,relatives,relation"
@@ -275,7 +275,8 @@ def download_and_save_posts(conn, community_id, community_name, offset):
 
 
 
-def download_and_save_community_members(cur, vk_owner_id):
+def download_and_save_community_members(conn, vk_owner_id):    
+    cur = conn.cursor()
     print(f"+ Загрузка подписчиков группы {vk_owner_id}")
     offset = 0;
     while True:
@@ -288,7 +289,8 @@ def download_and_save_community_members(cur, vk_owner_id):
             if cur.rowcount == 0:
                 download_and_save_user(cur, vk_user_id)
                 cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_owner_id) )
-
+        
+        conn.commit()
         loadedMembersCount = len(members_json_data_collection)
         if loadedMembersCount < limit_members_count:
             return
@@ -302,7 +304,8 @@ def download_and_save_community(conn, community_name):
 
     error_info = []
     if not check_for_errors(src, error_info):
-        raise Exception(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
+        print(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
+        return
 
     group_json_data_collection = __getValue(src, 'response/groups')
     if len(group_json_data_collection) == 0:
@@ -312,11 +315,10 @@ def download_and_save_community(conn, community_name):
     description = __getValue(group_json_data, 'name')
     group_id = - __getValue(group_json_data, 'id', 0)
 
-    cur = conn.cursor()
-
-    download_and_save_community_members(cur, group_id)
+    download_and_save_community_members(conn, group_id)
     conn.commit()
-
+    
+    cur = conn.cursor()
     cur.execute("SELECT id, top_post_date FROM communities WHERE name = %s", (community_name,) )
     community_id, top_post_date = cur.fetchone()
     if not top_post_date:
