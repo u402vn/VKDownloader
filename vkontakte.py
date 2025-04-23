@@ -226,6 +226,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             return
         offset += limit_comments_count
 
+
     
 def download_and_save_posts(conn, community_id, community_name, offset):
     url = f"https://api.vk.com/method/wall.get?domain={community_name}&offset={offset}&count={limit_post_count}&access_token={auth_token}&v=5.199"
@@ -296,6 +297,8 @@ def download_and_save_community_members(conn, vk_owner_id):
             return
         offset += limit_members_count
 
+
+
 def download_and_save_community(conn, community_name):
     print(f"Начало загрузки паблика {community_name}")
 
@@ -307,8 +310,8 @@ def download_and_save_community(conn, community_name):
         print(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
         return
 
-    group_json_data_collection = __getValue(src, 'response/groups')
-    if len(group_json_data_collection) == 0:
+    group_json_data_collection = __getValue(src, 'response/groups', None)
+    if not group_json_data_collection or (len(group_json_data_collection) == 0):
         return # не нашли ?
 
     group_json_data = group_json_data_collection[0]
@@ -338,7 +341,6 @@ def download_and_save_community(conn, community_name):
             break
         offset += limit_post_count
 
-
     cur.execute("SELECT max(date), count(*) FROM posts WHERE vk_owner_id = %s", (group_id,) )
     top_post_date, post_count = cur.fetchone()
 
@@ -349,18 +351,22 @@ def download_and_save_community(conn, community_name):
     print(f"Загрузка паблика {community_name} завершена")
 
 
+
 def download_and_save_coomunities(conn):
     cur = conn.cursor()    
-    cur.execute("SELECT name FROM communities ORDER BY last_update ASC NULLS FIRST, id DESC")
+    cur.execute("SELECT name FROM communities WHERE ObservationInterval > 0 ORDER BY last_update ASC NULLS FIRST, id DESC")
 
     rows = cur.fetchall()
     for community_name, in rows:
         download_and_save_community(conn, community_name)
 
 
+
 def main():
     conn = psycopg2.connect(database="vk", user = "postgres", password = "masterkey", host = "127.0.0.1", port = "5432")
     download_and_save_coomunities(conn)
+
+
 
 if __name__ == '__main__':
 	main()
