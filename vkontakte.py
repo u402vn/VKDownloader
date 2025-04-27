@@ -1,21 +1,17 @@
 ﻿import json
 from datetime import datetime
-from vk_auth import auth_token
+from vk_auth import auth_token, DatabaseConnectionString
 import psycopg2
-import requests
-import urllib3
+from vkcommon import getJsonValue, download_and_save_user, load_url_as_json
+import subprocess
+import sys
 
-urllib3.disable_warnings()
+limit_post_count = 99
+limit_comments_count = 99
+limit_likes_count = 99
+limit_members_count = 99
 
-limit_post_count = 30
-limit_comments_count = 50
-limit_likes_count = 100
-limit_members_count = 30
 
-user_base_fields = "id,first_name,last_name,deactivated,is_closed,can_access_closed,about,activities,bdate,blacklisted,blacklisted_by_me,bookscan_post,can_see_all_post,scan_see_au         dio,can_send_friend_request,can_write_private_message,career,city,common_count,connections,contacts,counters,country,crop_photo,domain,education,exports,,followers_count,friend_status,games,has_mobile,has_photo,home_town,interests,is_favorite,is_friend,is_hidden_from_feed,is_no_index"
-user_optional_fields_L_R = "last_seen,lists,maiden_name,military,movies,music,nickname,occupation,online,personal,photo_50,photo_100,photo_200_orig,photo_200,photo_400_orig,photo_id,photo_max,photo_max_orig,quotes,relatives,relation"
-user_optional_fields_S_W = "schools,screen_name,sex,site,status,timezone,trending,tv,universities,verified,wall_default,is_verified"
-user_all_fields = f"{user_base_fields},{user_optional_fields_L_R},{user_optional_fields_S_W}"
 
  # {'error_code': 5, 'error_msg': 'User authorization failed: access_token has expired.'}
  # данные приходят в формате json
@@ -36,87 +32,6 @@ def check_for_errors_with_exception(datas):
 
 
 
-def load_url_as_json(url: str) -> str:
-    try:    
-        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
-        req = requests.get(url, headers=headers, verify=False)         
-        return req.json()
-    except Exception as e:
-        return f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}'
-
-
-     
-def __getValue(json, path: str, defaultValue = ''):
-    keys = path.split('/')
-    key1 = keys[0]
-    key2 = keys[1] if len(keys) > 1 else None
-    value = defaultValue
-    if not key1 in json:
-        pass
-    elif not key2:
-        value = json[key1]
-    else:
-        node = json[key1]
-        if key2 in node:
-            value = node[key2]				
-    return value
-
-
-
-def download_and_save_user(cur, vk_user_id):
-    if vk_user_id <= 0:
-        return
-    
-    cur.execute("""SELECT 1 FROM users WHERE vk_num_id=%s""", (vk_user_id, ) )
-    if cur.rowcount > 0:
-        return # В Базе уже есть такая запись
-    
-    print(f"\t+ Загрузка данных аккаунта {vk_user_id}")
-
-    url = f"https://api.vk.com/method/users.get?user_ids={vk_user_id}&fields={user_all_fields}&access_token={auth_token}&v=5.199"
-    src = load_url_as_json(url)
-
-    #check_for_errors_with_exception(datas)
-    user_json_data = src["response"][0] 
-    
-    user_vk_num_str = __getValue(user_json_data, "domain")
-    user_vk_num_id = __getValue(user_json_data, "id") # должен быть равен vk_user_id
-    user_vk_country_name = __getValue(user_json_data, "country/title")
-    user_vk_city_name = __getValue(user_json_data, "city/title")
-
-    user_vk_sex = __getValue(user_json_data, "sex")
-    if user_vk_sex == 1:
-        user_vk_sex = 'Ж'
-    elif user_vk_sex == 2:
-        user_vk_sex = 'М'
-    else:
-        user_vk_sex = ''
-
-    try:
-        user_date_of_birth = __getValue(user_json_data, "bdate")
-        user_date_of_birth = datetime.strptime(user_date_of_birth, "%d.%m.%Y")
-    except:
-        user_date_of_birth = None
-
-    user_first_name = __getValue(user_json_data, "first_name")    
-    user_last_name = __getValue(user_json_data, "last_name")
-    user_middle_name = __getValue(user_json_data, "middle_name")
-    user_nickname = __getValue(user_json_data, "nickname")
-    user_maiden_name = __getValue(user_json_data, "maiden_name")
-    user_is_hidden = __getValue(user_json_data, "is_closed")
-    user_photo_max_orig = __getValue(user_json_data, "photo_max_orig")
-
-    json_data = json.dumps(user_json_data)
-    cur.execute("""INSERT INTO users 
-        (first_name, last_name, middle_name, nickname, maiden_name, 
-        vk_city_name, vk_country_name, date_of_birth, vk_num_id, vk_str_id, photo_url, vk_sex, is_hidden, json_data)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
-        (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
-            user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
-            user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
-
-
-
 def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
     if vk_comment_id:
         cur.execute("""SELECT 1 FROM likes WHERE vk_user_id = %s AND vk_owner_id = %s AND vk_post_id IS NULL AND vk_comment_id = %s""", 
@@ -126,7 +41,7 @@ def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
                     (vk_user_id, vk_owner_id, vk_post_id) )
     if cur.rowcount > 0:
         return
-    download_and_save_user(cur, vk_user_id)
+    download_and_save_user(cur, auth_token, vk_user_id)
     cur.execute("""INSERT INTO likes (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) VALUES (%s, %s, %s, %s)""",
                 (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) )
 
@@ -139,16 +54,16 @@ def download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id):
         url = f"https://api.vk.com/method/likes.getList?type=comment&owner_id={vk_owner_id}&item_id={vk_comment_id}&extended=1&count={limit_likes_count}&offset={offset}&access_token={auth_token}&v=5.199"
 
         src = load_url_as_json(url)
-        like_json_data_collection = __getValue(src, 'response/items')
+        like_json_data_collection = getJsonValue(src, 'response/items', None)
         for like_json_data in like_json_data_collection:
-            vk_user_id = __getValue(like_json_data, "id", 0)
-            sender_type = __getValue(like_json_data, "type")
+            vk_user_id = getJsonValue(like_json_data, "id", 0)
+            sender_type = getJsonValue(like_json_data, "type")
             if sender_type == "profile":
                 save_like(cur, vk_user_id, vk_owner_id, None, vk_comment_id)
 
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
-            return
+            break
         offset += limit_likes_count
 
 
@@ -160,16 +75,16 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
         url = f"https://api.vk.com/method/likes.getList?type=post&owner_id={vk_owner_id}&item_id={vk_post_id}&extended=1&count={limit_likes_count}&offset={offset}&access_token={auth_token}&v=5.199"
 
         src = load_url_as_json(url)
-        like_json_data_collection = __getValue(src, 'response/items')
+        like_json_data_collection = getJsonValue(src, 'response/items', None)
         for like_json_data in like_json_data_collection:
-            vk_user_id = __getValue(like_json_data, "id", 0)
-            sender_type = __getValue(like_json_data, "type")
+            vk_user_id = getJsonValue(like_json_data, "id", 0)
+            sender_type = getJsonValue(like_json_data, "type")
             if sender_type == "profile":
                 save_like(cur, vk_user_id, vk_owner_id, vk_post_id, None)
 
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
-            return
+            break
         offset += limit_likes_count
 
 
@@ -185,26 +100,26 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             vk_parent_id = None
 
         src = load_url_as_json(url)
-        comment_json_data_collection = __getValue(src, 'response/items')
+        comment_json_data_collection = getJsonValue(src, 'response/items', None)
 
 #        check_for_errors_with_exception(src)
         for comment_json_data in comment_json_data_collection:
-            comment_vk_id = __getValue(comment_json_data, "id")
+            comment_vk_id = getJsonValue(comment_json_data, "id")
             comment_post_id = post_vk_id
             comment_community_id = communityId
-            thread_count = __getValue(comment_json_data, "thread/count", 0)
-            comment_vk_from_id = __getValue(comment_json_data, "from_id", None)
+            thread_count = getJsonValue(comment_json_data, "thread/count", 0)
+            comment_vk_from_id = getJsonValue(comment_json_data, "from_id", None)
             comment_date = datetime.fromtimestamp(comment_json_data["date"])
-            likes_count = __getValue(comment_json_data, "likes/count", 0)
+            likes_count = getJsonValue(comment_json_data, "likes/count", 0)
 
             #todo check if exists. 2. Update if was changed
    
             cur.execute("""SELECT 1 FROM comments WHERE vk_id = %s AND post_id = %s AND vk_owner_id = %s""", 
                         (comment_vk_id, comment_post_id, vk_owner_id) )
             if cur.rowcount == 0:
-                comment_text = __getValue(comment_json_data, "text")
-                comment_reply_to_user = __getValue(comment_json_data, "reply_to_user", None)
-                comment_reply_to_comment = __getValue(comment_json_data, "reply_to_comment", None)
+                comment_text = getJsonValue(comment_json_data, "text")
+                comment_reply_to_user = getJsonValue(comment_json_data, "reply_to_user", None)
+                comment_reply_to_comment = getJsonValue(comment_json_data, "reply_to_comment", None)
 
                 cur.execute("""INSERT INTO comments (vk_id, vk_owner_id, vk_from_id, date, text, reply_to_user, reply_to_comment, post_id, community_id, vk_parent_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
@@ -214,7 +129,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             else:
                 print(f"\tЗагружен комментарий (без сохранения): {comment_date}")
 
-            download_and_save_user(cur, comment_vk_from_id)
+            download_and_save_user(cur, auth_token, comment_vk_from_id)
 
             if likes_count > 0:
                 download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
@@ -223,7 +138,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
 
         loadedCommentsCount = len(comment_json_data_collection)
         if loadedCommentsCount < limit_comments_count:
-            return
+            break
         offset += limit_comments_count
 
 
@@ -239,10 +154,10 @@ def download_and_save_posts(conn, community_id, community_name, offset):
     earliest_post_date = None
 
     cur = conn.cursor()
-    post_json_data_collection = __getValue(src, 'response/items')
+    post_json_data_collection = getJsonValue(src, 'response/items', None)
     for post_json_data in post_json_data_collection:
-        post_vk_id = __getValue(post_json_data, "id")
-        post_vk_owner_id = __getValue(post_json_data, "owner_id")
+        post_vk_id = getJsonValue(post_json_data, "id")
+        post_vk_owner_id = getJsonValue(post_json_data, "owner_id")
         post_date =  datetime.fromtimestamp(post_json_data["date"])
 
         if (not earliest_post_date) or (earliest_post_date > post_date):
@@ -250,10 +165,10 @@ def download_and_save_posts(conn, community_id, community_name, offset):
 
         cur.execute("""SELECT 1 FROM posts WHERE community_id=%s AND vk_id=%s AND vk_owner_id=%s""", (community_id, post_vk_id, post_vk_owner_id) )
         if cur.rowcount == 0:
-            post_vk_from_id = __getValue(post_json_data, "from_id")
-            post_vk_created_by = __getValue(post_json_data, "created_by", None)
-            post_vk_signer_id = __getValue(post_json_data, "signer_id", None)
-            post_text = __getValue(post_json_data, "text")            
+            post_vk_from_id = getJsonValue(post_json_data, "from_id")
+            post_vk_created_by = getJsonValue(post_json_data, "created_by", None)
+            post_vk_signer_id = getJsonValue(post_json_data, "signer_id", None)
+            post_text = getJsonValue(post_json_data, "text")            
 
             cur.execute("""INSERT INTO posts (community_id, vk_id, vk_owner_id, vk_from_id, vk_created_by, vk_signer_id, date, text)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
@@ -263,11 +178,11 @@ def download_and_save_posts(conn, community_id, community_name, offset):
         else:
             print(f"Загружен пост (без сохранения) {post_vk_id} для {community_name}: {post_vk_id} от {post_date}")
         
-        likes_count = __getValue(post_json_data, "likes/count", 0)     
+        likes_count = getJsonValue(post_json_data, "likes/count", 0)     
         if likes_count > 0:
             download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
 
-        comments_count = __getValue(post_json_data, "comments/count", 0)
+        comments_count = getJsonValue(post_json_data, "comments/count", 0)
         if comments_count > 0:
             print(f"+ Загрузка комментариев к посту")
             download_and_save_comments(cur, community_id, post_vk_owner_id, post_vk_id)
@@ -284,17 +199,17 @@ def download_and_save_community_members(conn, vk_owner_id):
         url = f"https://api.vk.com/method/groups.getMembers?group_id={-vk_owner_id}&offset={offset}&count={limit_members_count}&access_token={auth_token}&v=5.199"
         src = load_url_as_json(url)
 
-        members_json_data_collection = __getValue(src, 'response/items')
+        members_json_data_collection = getJsonValue(src, 'response/items', None)
         for vk_user_id in members_json_data_collection:
             cur.execute("""SELECT 1 FROM community_members WHERE vk_user_id = %s AND vk_owner_id = %s""", (vk_user_id, vk_owner_id) )
             if cur.rowcount == 0:
-                download_and_save_user(cur, vk_user_id)
+                download_and_save_user(cur, auth_token, vk_user_id)
                 cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_owner_id) )
         
         conn.commit()
         loadedMembersCount = len(members_json_data_collection)
         if loadedMembersCount < limit_members_count:
-            return
+            break
         offset += limit_members_count
 
 
@@ -310,13 +225,13 @@ def download_and_save_community(conn, community_name):
         print(f"Code: {error_info[0]}, Message: '{error_info[1]}'")
         return
 
-    group_json_data_collection = __getValue(src, 'response/groups', None)
+    group_json_data_collection = getJsonValue(src, 'response/groups', None)
     if not group_json_data_collection or (len(group_json_data_collection) == 0):
         return # не нашли ?
 
     group_json_data = group_json_data_collection[0]
-    description = __getValue(group_json_data, 'name')
-    group_id = - __getValue(group_json_data, 'id', 0)
+    description = getJsonValue(group_json_data, 'name')
+    group_id = - getJsonValue(group_json_data, 'id', 0)
 
     download_and_save_community_members(conn, group_id)
     conn.commit()
@@ -352,7 +267,7 @@ def download_and_save_community(conn, community_name):
 
 
 
-def download_and_save_coomunities(conn):
+def download_and_save_communities(conn):
     cur = conn.cursor()    
     cur.execute("SELECT name FROM communities WHERE ObservationInterval > 0 ORDER BY last_update ASC NULLS FIRST, id DESC")
 
@@ -362,9 +277,14 @@ def download_and_save_coomunities(conn):
 
 
 
+
+
 def main():
-    conn = psycopg2.connect(database="vk", user = "postgres", password = "masterkey", host = "127.0.0.1", port = "5432")
-    download_and_save_coomunities(conn)
+    command = f'"{sys.executable}" vkfriends.py'
+    subprocess.Popen(command, creationflags = subprocess.CREATE_NEW_CONSOLE)
+
+    conn = psycopg2.connect(DatabaseConnectionString)
+    download_and_save_communities(conn)
 
 
 

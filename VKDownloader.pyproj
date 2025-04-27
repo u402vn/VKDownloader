@@ -22,6 +22,8 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="vkcommon.py" />
+    <Compile Include="vkfriends.py" />
     <Compile Include="vkontakte.py" />
     <Compile Include="vk_auth.py" />
   </ItemGroup>
