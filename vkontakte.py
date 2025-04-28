@@ -2,7 +2,7 @@
 from datetime import datetime
 from vk_auth import auth_token, DatabaseConnectionString
 import psycopg2
-from vkcommon import getJsonValue, download_and_save_user, load_url_as_json, save_group_member
+from vkcommon import getJsonValue, download_and_save_user, load_url_as_json, save_group_member, save_update_group
 import subprocess
 import sys
 import time
@@ -240,6 +240,9 @@ def download_and_save_community(conn, community_name):
     group_json_data = group_json_data_collection[0]
     description = getJsonValue(group_json_data, 'name')
     group_id = - getJsonValue(group_json_data, 'id', 0)
+
+    cur = conn.cursor()
+    save_update_group(cur, group_id, community_name, description)
 
     download_and_save_community_members(conn, group_id)
     conn.commit()
