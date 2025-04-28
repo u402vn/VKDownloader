@@ -2,9 +2,11 @@
 from datetime import datetime
 from vk_auth import auth_token, DatabaseConnectionString
 import psycopg2
-from vkcommon import getJsonValue, download_and_save_user, load_url_as_json
+from vkcommon import getJsonValue, download_and_save_user, load_url_as_json, save_group_member
 import subprocess
 import sys
+import time
+import vkfriends
 
 limit_post_count = 99
 limit_comments_count = 99
@@ -51,6 +53,7 @@ def download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id):
     print(f"+ Загрузка лайков к комментарию {vk_comment_id}")
     offset = 0;
     while True:
+        time.sleep(1)
         url = f"https://api.vk.com/method/likes.getList?type=comment&owner_id={vk_owner_id}&item_id={vk_comment_id}&extended=1&count={limit_likes_count}&offset={offset}&access_token={auth_token}&v=5.199"
 
         src = load_url_as_json(url)
@@ -191,20 +194,24 @@ def download_and_save_posts(conn, community_id, community_name, offset):
 
 
 
-def download_and_save_community_members(conn, vk_owner_id):    
+def download_and_save_community_members(conn, vk_group_id):    
     cur = conn.cursor()
-    print(f"+ Загрузка подписчиков группы {vk_owner_id}")
+    print(f"+ Загрузка подписчиков группы {vk_group_id}")
     offset = 0;
     while True:
-        url = f"https://api.vk.com/method/groups.getMembers?group_id={-vk_owner_id}&offset={offset}&count={limit_members_count}&access_token={auth_token}&v=5.199"
+        url = f"https://api.vk.com/method/groups.getMembers?group_id={-vk_group_id}&offset={offset}&count={limit_members_count}&access_token={auth_token}&v=5.199"
         src = load_url_as_json(url)
 
         members_json_data_collection = getJsonValue(src, 'response/items', None)
         for vk_user_id in members_json_data_collection:
-            cur.execute("""SELECT 1 FROM community_members WHERE vk_user_id = %s AND vk_owner_id = %s""", (vk_user_id, vk_owner_id) )
-            if cur.rowcount == 0:
-                download_and_save_user(cur, auth_token, vk_user_id)
-                cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_owner_id) )
+
+            download_and_save_user(cur, auth_token, vk_user_id)
+            save_group_member(cur, vk_user_id, vk_group_id)
+
+            #cur.execute("""SELECT 1 FROM community_members WHERE vk_user_id = %s AND vk_owner_id = %s""", (vk_user_id, vk_group_id) )
+            #if cur.rowcount == 0:
+            #    download_and_save_user(cur, auth_token, vk_user_id)
+            #    cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_group_id) )
         
         conn.commit()
         loadedMembersCount = len(members_json_data_collection)
@@ -280,6 +287,8 @@ def download_and_save_communities(conn):
 
 
 def main():
+    #vkfriends.main()
+
     command = f'"{sys.executable}" vkfriends.py'
     subprocess.Popen(command, creationflags = subprocess.CREATE_NEW_CONSOLE)
 

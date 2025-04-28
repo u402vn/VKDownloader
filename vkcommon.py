@@ -100,3 +100,28 @@ def download_and_save_user(cur, auth_token, vk_user_id):
         (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
             user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
             user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
+
+
+
+def save_group_member(cur, vk_user_id, vk_group_id):
+    cur.execute("""SELECT 1 FROM community_members WHERE vk_user_id = %s AND vk_owner_id = %s""", (vk_user_id, vk_group_id) )
+    if cur.rowcount == 0:
+        print(f"\t + Добавление в БД подписку {vk_user_id} на группу {vk_group_id}")
+        cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_group_id) )
+
+
+
+def save_update_group(cur, vk_group_id, screen_name, name):
+    cur.execute("SELECT vk_id, coalesce(description, '') FROM communities WHERE name = %s", (screen_name,) )
+
+    if cur.rowcount == 0:
+        print(f"\t + Добавление группы в БД  {screen_name}")
+        cur.execute("INSERT INTO communities (vk_id, name, description) VALUES (%s, %s, %s)", (vk_group_id, screen_name, name) )
+        return
+
+    stored_id, stored_name = cur.fetchone()
+    if (stored_id != vk_group_id) or (name != stored_name):
+        print(f"\t * Обновление группы в БД  {screen_name}")
+        cur.execute(f'UPDATE communities SET description = %s, vk_id = %s WHERE name = %s',  (name, vk_group_id, screen_name) )
+        return
+    print(f"\t . Игнорирование группы {screen_name}")
