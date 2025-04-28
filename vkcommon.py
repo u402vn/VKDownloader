@@ -19,13 +19,19 @@ def load_url_as_json(url: str) -> str:
     global prevCallTime
     currentTime = time.time()
     interval = currentTime - prevCallTime 
-    if (interval < 0.33):
-        time.sleep(0.33 - interval)
+    if (interval < 0.4):
+        time.sleep(0.4 - interval)
     prevCallTime = currentTime
     try:    
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
-        req = requests.get(url, headers=headers, verify=False)         
-        return req.json()
+        for i in range(5):
+            req = requests.get(url, headers=headers, verify=False)         
+            json_data = req.json()
+            errorCode = getJsonValue(json_data, 'error/error_code', 0)
+            if errorCode != 6:
+                break
+            time.sleep(5)
+        return json_data
     except Exception as e:
         return f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}'
 
@@ -106,7 +112,7 @@ def download_and_save_user(cur, auth_token, vk_user_id):
 def save_group_member(cur, vk_user_id, vk_group_id):
     cur.execute("""SELECT 1 FROM community_members WHERE vk_user_id = %s AND vk_owner_id = %s""", (vk_user_id, vk_group_id) )
     if cur.rowcount == 0:
-        print(f"\t + Добавление в БД подписку {vk_user_id} на группу {vk_group_id}")
+        print(f"\t + Добавление в БД подписки пользователя {vk_user_id} на группу {vk_group_id}")
         cur.execute("""INSERT INTO community_members (vk_user_id, vk_owner_id) VALUES (%s, %s)""", (vk_user_id, vk_group_id) )
 
 

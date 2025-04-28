@@ -78,6 +78,7 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
         url = f"https://api.vk.com/method/likes.getList?type=post&owner_id={vk_owner_id}&item_id={vk_post_id}&extended=1&count={limit_likes_count}&offset={offset}&access_token={auth_token}&v=5.199"
 
         src = load_url_as_json(url)
+
         like_json_data_collection = getJsonValue(src, 'response/items', None)
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
@@ -281,8 +282,6 @@ def download_and_save_communities(conn):
     rows = cur.fetchall()
     for community_name, in rows:
         download_and_save_community(conn, community_name)
-
-
 
 
 

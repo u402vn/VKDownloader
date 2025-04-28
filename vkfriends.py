@@ -4,7 +4,7 @@ from vkcommon import getJsonValue, download_and_save_user, load_url_as_json, sav
 from vk_auth import auth_token2, DatabaseConnectionString
 
 limit_friends_count = 30
-limit_subscriptions_count = 100
+limit_subscriptions_count = 200
 
 def download_user_friends(conn, userId):
     cur = conn.cursor()
@@ -46,29 +46,30 @@ def download_user_communities(conn, userId):
     groups = getJsonValue(src, 'response/groups', None)
     if not groups:
         return
+    groupIds = getJsonValue(groups, 'items', None)
 
-    communities_collection = getJsonValue(groups, 'items', None)
-    #отфильтровать бы чем-то типа group_exists с проверкой по БД
-    groupIds = ','.join(map(str, communities_collection))
-        
-    url = f"https://api.vk.com/method/groups.getById?group_ids={groupIds}&access_token={auth_token2}&v=5.199"
-    src = load_url_as_json(url)
-    group_json_data_collection = getJsonValue(src, 'response/groups', None)
+    groupIdsBatches = [groupIds[i:i + limit_subscriptions_count] for i in range(0, len(groupIds), limit_subscriptions_count)]
 
-    loadedCount = 0
-    cur = conn.cursor()
-    if communities_collection:
-        for group_json_data in group_json_data_collection:            
-            vk_group_id = - getJsonValue(group_json_data, 'id', 0)
-            screen_name = getJsonValue(group_json_data, 'screen_name')
-            name = getJsonValue(group_json_data, 'name')
+    for groupIdsBatch in groupIdsBatches:
+        groupIdsStr = ','.join(map(str, groupIdsBatch))        
+        url = f"https://api.vk.com/method/groups.getById?group_ids={groupIdsStr}&access_token={auth_token2}&v=5.199"
+        src = load_url_as_json(url)
+        group_json_data_collection = getJsonValue(src, 'response/groups', None)
+
+        loadedCount = 0
+        cur = conn.cursor()
+        if group_json_data_collection:
+            for group_json_data in group_json_data_collection:            
+                vk_group_id = - getJsonValue(group_json_data, 'id', 0)
+                screen_name = getJsonValue(group_json_data, 'screen_name')
+                name = getJsonValue(group_json_data, 'name')
             
-            save_update_group(cur, vk_group_id, screen_name, name)
-            save_group_member(cur, userId, vk_group_id)
+                save_update_group(cur, vk_group_id, screen_name, name)
+                save_group_member(cur, userId, vk_group_id)
 
-            loadedCount += 1
-            if loadedCount % 10 == 0:
-                conn.commit()
+                loadedCount += 1
+                if loadedCount % 10 == 0:
+                    conn.commit()
             
         #id screen_name name - сделать общую функцию сохранения с download_and_save_community(conn, community_name):
         #сделать добавление подписчика в группу общее с download_and_save_community_members
