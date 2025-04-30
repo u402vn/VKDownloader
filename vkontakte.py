@@ -6,7 +6,7 @@ from vkcommon import getJsonValue, download_and_save_user, load_url_as_json, sav
 import subprocess
 import sys
 import time
-import vkfriends
+from vkfriends import download_all_friend_for_users_from_belarus_phones
 
 limit_post_count = 99
 limit_comments_count = 99
@@ -243,9 +243,6 @@ def download_and_save_community(conn, community_name):
 
     cur = conn.cursor()
     save_update_group(cur, group_id, community_name, description)
-
-    download_and_save_community_members(conn, group_id)
-    conn.commit()
     
     cur = conn.cursor()
     cur.execute("SELECT id, top_post_date FROM communities WHERE name = %s", (community_name,) )
@@ -254,6 +251,11 @@ def download_and_save_community(conn, community_name):
         top_post_date = datetime(1900, 1, 1, 1, 1, 1)
     cur.execute("SELECT COUNT(*) FROM posts p WHERE p.vk_owner_id = %s AND p.date > %s ", (group_id, top_post_date) )
     offset, = cur.fetchone()
+
+    somePostLoaded = offset > 0
+    if not somePostLoaded:
+        download_and_save_community_members(conn, group_id)
+        conn.commit()
 
     offset = offset - 100; # перестраховываемся, начиная качать не с самого конца
     if offset < 0:
@@ -267,6 +269,8 @@ def download_and_save_community(conn, community_name):
             break
         offset += limit_post_count
 
+        download_all_friend_for_users_from_belarus_phones(conn, 3) # просто задержка, чтобы не было бана по загрузке комментариев и лайков
+
     cur.execute("SELECT max(date), count(*) FROM posts WHERE vk_owner_id = %s", (group_id,) )
     top_post_date, post_count = cur.fetchone()
 
@@ -274,6 +278,11 @@ def download_and_save_community(conn, community_name):
     cur.execute(f'UPDATE communities SET last_update = %s, top_post_date =  %s, post_count = %s, description = %s, vk_id = %s WHERE name = %s', 
                 (last_update, top_post_date, post_count, description, group_id, community_name) )
     conn.commit()
+
+    if somePostLoaded:
+        download_and_save_community_members(conn, group_id)
+        conn.commit()
+
     print(f"Загрузка паблика {community_name} завершена")
 
 
@@ -294,8 +303,9 @@ def main():
     command = f'"{sys.executable}" vkfriends.py'
     subprocess.Popen(command, creationflags = subprocess.CREATE_NEW_CONSOLE)
 
-    conn = psycopg2.connect(DatabaseConnectionString)
-    download_and_save_communities(conn)
+    while True:
+        conn = psycopg2.connect(DatabaseConnectionString)
+        download_and_save_communities(conn)
 
 
 

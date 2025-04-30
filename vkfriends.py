@@ -86,10 +86,12 @@ def download_all_friend_for_users_with_comments(conn):
 
 
 
-def download_all_friend_for_users_from_belarus_phones(conn):
+def download_all_friend_for_users_from_belarus_phones(conn, loadCount: int = -1):
     cur = conn.cursor()
-    while True:
-        cur.execute("""select l.vk_user_id from data_leaks l
+    i = 0
+    while (loadCount > 0) and (i < loadCount):
+        i += 1
+        cur.execute("""select distinct l.vk_user_id from data_leaks l
             left outer join users u on l.vk_user_id = u.vk_num_id
             where (l.phone like '7529%' or l.phone like '7533%' or l.phone like '7544%' or l.phone like '7525%')
             and u.vk_num_id is null

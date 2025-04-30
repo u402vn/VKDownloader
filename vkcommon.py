@@ -22,18 +22,23 @@ def load_url_as_json(url: str) -> str:
     if (interval < 0.4):
         time.sleep(0.4 - interval)
     prevCallTime = currentTime
-    try:    
-        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
-        for i in range(5):
+  
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
+    for i in range(5):
+        try:
             req = requests.get(url, headers=headers, verify=False)         
             json_data = req.json()
             errorCode = getJsonValue(json_data, 'error/error_code', 0)
+            if errorCode == 5:
+                print(f"Закончился срок действия токена")
+                break
             if errorCode != 6:
                 break
-            time.sleep(5)
-        return json_data
-    except Exception as e:
-        return f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}'
+        except Exception as e:
+            print(f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}')
+        time.sleep(5)
+    return json_data
+
 
 
      
