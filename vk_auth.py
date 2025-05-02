@@ -1,7 +1,12 @@
-﻿app_id = 6776474
-auth_token = 'vk1.a.dt36T79pSElNmcLRZhkq-E5Wo8creLEltCg0VyCg3DnUV7MP1mb4QbPJ3fNpA_HHiKpp0dX1Q16azW8LBvrG3LYsUDa9pDd6VpmHA52cQghXO5dsj8uluBMUQRoKOX2DGESKBQ8n8Xjuq--7_j45TAAZgq6fty2Y05Vli_KNgcDv_c6EIlULLgL9vK_P2ea8jGyjrBNOzhq9Lc9rciOVzg'
+﻿VKTokens = [
 
-app_id2 = 10570017
-auth_token2 = 'vk1.a.uiZaajNPdTNm_CDkdcycz2vJyX8m91OHLam42T0SvG5sJVRDbVBRsv7IM4VZxBq7PMO1VL2p-eZBMh3ihCrsqQ_wu-iGQZOZNekYLtd2tZ4Ic4KOmHNKlLhfK56XfbNNLDsG4M1RoFapJCyBXFSLsQVkWmnX5-v3BpqFi8aztGtjloc5uwvqyMAGY7gEvTPCNH481gNX4Kd9ApJHxJPpdg'
+(6776474, 'vk1.a.dt36T79pSElNmcLRZhkq-E5Wo8creLEltCg0VyCg3DnUV7MP1mb4QbPJ3fNpA_HHiKpp0dX1Q16azW8LBvrG3LYsUDa9pDd6VpmHA52cQghXO5dsj8uluBMUQRoKOX2DGESKBQ8n8Xjuq--7_j45TAAZgq6fty2Y05Vli_KNgcDv_c6EIlULLgL9vK_P2ea8jGyjrBNOzhq9Lc9rciOVzg'),
+
+(10570017, 'vk1.a.uiZaajNPdTNm_CDkdcycz2vJyX8m91OHLam42T0SvG5sJVRDbVBRsv7IM4VZxBq7PMO1VL2p-eZBMh3ihCrsqQ_wu-iGQZOZNekYLtd2tZ4Ic4KOmHNKlLhfK56XfbNNLDsG4M1RoFapJCyBXFSLsQVkWmnX5-v3BpqFi8aztGtjloc5uwvqyMAGY7gEvTPCNH481gNX4Kd9ApJHxJPpdg')
+
+]
+
+
+
 
 DatabaseConnectionString = "host=localhost dbname=vk user=postgres password=masterkey port=5432"

@@ -7,16 +7,31 @@ import time
 
 urllib3.disable_warnings()
 
+access_token = ''
+
 user_base_fields = "id,first_name,last_name,deactivated,is_closed,can_access_closed,about,activities,bdate,blacklisted,blacklisted_by_me,bookscan_post,can_see_all_post,scan_see_au         dio,can_send_friend_request,can_write_private_message,career,city,common_count,connections,contacts,counters,country,crop_photo,domain,education,exports,,followers_count,friend_status,games,has_mobile,has_photo,home_town,interests,is_favorite,is_friend,is_hidden_from_feed,is_no_index"
 user_optional_fields_L_R = "last_seen,lists,maiden_name,military,movies,music,nickname,occupation,online,personal,photo_50,photo_100,photo_200_orig,photo_200,photo_400_orig,photo_id,photo_max,photo_max_orig,quotes,relatives,relation"
 user_optional_fields_S_W = "schools,screen_name,sex,site,status,timezone,trending,tv,universities,verified,wall_default,is_verified"
 user_all_fields = f"{user_base_fields},{user_optional_fields_L_R},{user_optional_fields_S_W}"
 
 
+request_likes_count = 0
+request_comments_count = 0
+request_members_count = 0
 
 prevCallTime = time.time()
 def load_url_as_json(url: str) -> str:
-    global prevCallTime
+    global prevCallTime, request_likes_count, request_members_count, request_comments_count
+
+    if 'likes.getList' in url:
+        request_likes_count += 1
+    elif 'wall.getComments' in url:
+        request_comments_count += 1
+    elif 'groups.getMembers' in url:
+        request_members_count += 1
+
+    url = f'{url}&access_token={access_token}&v=5.199'
+
     currentTime = time.time()
     interval = currentTime - prevCallTime 
     if (interval < 0.4):
@@ -29,24 +44,54 @@ def load_url_as_json(url: str) -> str:
             req = requests.get(url, headers=headers, verify=False)         
             json_data = req.json()
             errorCode = getJsonValue(json_data, 'error/error_code', 0)
+            errorMsg = getJsonValue(json_data, 'error/error_msg', 0)
             if errorCode == 5:
                 print(f"Закончился срок действия токена")
                 break
-            if errorCode != 6:
+            if errorCode != 0:
+                print(f"Ошибка VK при получении данных с кодом {errorCode}: {errorMsg}")
+                time.sleep(10)
+                if errorCode in [6, 18, 29, 30]:                
+                    break
+            else:
                 break
         except Exception as e:
             print(f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}')
-        time.sleep(5)
+            time.sleep(10)
     return json_data
 
 
 
+def set_access_token(token: str):
+    global access_token 
+    access_token = token
+
+
+def needPause():
+    global request_likes_count, request_comments_count, request_members_count
+    if request_likes_count > 100:
+        request_likes_count = 0
+        return True
+    if request_comments_count > 100:
+        request_comments_count = 0
+        return True
+    if request_members_count > 20:
+        request_members_count = 0
+        return
+
+    return False
+
      
 def getJsonValue(json, path: str, defaultValue = ''):
+    value = defaultValue
+    
+    if not json:
+        return value
+
     keys = path.split('/')
     key1 = keys[0]
     key2 = keys[1] if len(keys) > 1 else None
-    value = defaultValue
+    
     if not key1 in json:
         pass
     elif not key2:
@@ -59,7 +104,7 @@ def getJsonValue(json, path: str, defaultValue = ''):
 
 
 
-def download_and_save_user(cur, auth_token, vk_user_id):
+def download_and_save_user(cur, vk_user_id):
     if vk_user_id <= 0:
         return
     
@@ -70,7 +115,7 @@ def download_and_save_user(cur, auth_token, vk_user_id):
     
     print(f"\t+ Загрузка и добавление в БД данных аккаунта {vk_user_id}")
 
-    url = f"https://api.vk.com/method/users.get?user_ids={vk_user_id}&fields={user_all_fields}&access_token={auth_token}&v=5.199"
+    url = f"https://api.vk.com/method/users.get?user_ids={vk_user_id}&fields={user_all_fields}"
     src = load_url_as_json(url)
 
     #check_for_errors_with_exception(datas) 
