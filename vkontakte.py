@@ -22,7 +22,7 @@ instanceCount = len(VKTokens)
 
 def load_users_in_pause(conn):
     if needPause():  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
-        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 1)
+        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 2)
         vkfriends.download_all_friend_for_users_from_belarus_phones(conn, instanceIndex, instanceCount, 1)
         
 
@@ -109,6 +109,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             comment_date = datetime.fromtimestamp(comment_json_data["date"])
             likes_count = getJsonValue(comment_json_data, "likes/count", 0)
 
+            download_and_save_user(cur, comment_vk_from_id)
             #todo check if exists. 2. Update if was changed
    
             cur.execute("""SELECT 1 FROM comments WHERE vk_id = %s AND post_id = %s AND vk_owner_id = %s""", 
@@ -126,7 +127,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             else:
                 print(f"\tЗагружен комментарий (без сохранения): {comment_date}")
 
-            download_and_save_user(cur, comment_vk_from_id)
+            
 
             if likes_count > 0:
                 download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
@@ -283,7 +284,7 @@ def download_and_save_communities(conn):
 
 
 def startDownload():
-    access_token = VKTokens[instanceIndex][1]
+    access_token = VKTokens[instanceIndex]
     set_access_token(access_token)
     while True:
         conn = psycopg2.connect(DatabaseConnectionString)

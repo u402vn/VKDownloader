@@ -89,8 +89,7 @@ def download_all_friend_for_users_with_comments(conn, instanceIndex: int, instan
     i = 0
     while (loadCount < 0) or (i < loadCount):
         i += 1
-        cur.execute(f"""select distinct u.vk_num_id from users u, comments c where u.vk_num_id = c.vk_from_id and u.last_review is null 
-            and c.vk_from_id % {instanceCount} = {instanceIndex} limit 1""")
+        cur.execute(f"""select distinct u.vk_num_id from users u where u.last_review is null and u.vk_num_id % {instanceCount} = {instanceIndex} limit 1""")
         rows = cur.fetchall()
         for userId, in rows:
             download_user_communities(conn, userId)

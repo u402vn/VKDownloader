@@ -69,10 +69,10 @@ def set_access_token(token: str):
 
 def needPause():
     global request_likes_count, request_comments_count, request_members_count
-    if request_likes_count > 100:
+    if request_likes_count > 200:
         request_likes_count = 0
         return True
-    if request_comments_count > 100:
+    if request_comments_count > 200:
         request_comments_count = 0
         return True
     if request_members_count > 20:
