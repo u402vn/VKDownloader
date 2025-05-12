@@ -51,7 +51,8 @@ def load_url_as_json(url: str) -> str:
             if errorCode != 0:
                 print(f"Ошибка VK при получении данных с кодом {errorCode}: {errorMsg}")
                 time.sleep(10)
-                if errorCode in [6, 18, 29, 30]:                
+                if errorCode in [6, 18, 29, 30]:
+                    print(f"request_likes_count={request_likes_count}, request_comments_count={request_comments_count}, request_members_count={request_members_count}")
                     break
             else:
                 break
@@ -69,15 +70,12 @@ def set_access_token(token: str):
 
 def needPause():
     global request_likes_count, request_comments_count, request_members_count
-    if request_likes_count > 200:
-        request_likes_count = 0
+    if (request_likes_count > 0) and (request_likes_count % 100 == 0):
         return True
-    if request_comments_count > 200:
-        request_comments_count = 0
+    if (request_comments_count > 0) and (request_comments_count % 100 == 0):
         return True
-    if request_members_count > 20:
-        request_members_count = 0
-        return
+    if (request_members_count > 0) and (request_members_count % 20 == 0):
+        return True
 
     return False
 
@@ -149,10 +147,13 @@ def download_and_save_user(cur, vk_user_id):
     user_photo_max_orig = getJsonValue(user_json_data, "photo_max_orig")
 
     json_data = json.dumps(user_json_data)
+    
+    #ОШИБКА:  повторяющееся значение ключа нарушает ограничение уникальности "users_vk_num_id_pk"
+    #DETAIL:  Ключ "(vk_num_id)=(29358724)" уже существует.
     cur.execute("""INSERT INTO users 
         (first_name, last_name, middle_name, nickname, maiden_name, 
         vk_city_name, vk_country_name, date_of_birth, vk_num_id, vk_str_id, photo_url, vk_sex, is_hidden, json_data)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (vk_num_id) DO NOTHING""", 
         (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
             user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
             user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )

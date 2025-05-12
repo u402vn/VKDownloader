@@ -87,6 +87,26 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
 
 
 
+
+def download_likes_for_stored_comments(conn, count = 1):
+    cur = conn.cursor()
+    cur.execute(f"""select p.vk_owner_id, p.vk_id from posts p where p.like_Load_date is null and -p.vk_owner_id % {instanceCount} = {instanceIndex} limit {count}""")
+    postResultSet = cur.fetchall()
+    for vk_owner_id, vk_post_id in postResultSet:
+        download_and_save_post_likes(cur, vk_owner_id, vk_post_id)
+        loadedCount = 1
+        cur.execute(f"""select c.vk_id from comments c where c.vk_owner_id = %s and c.post_id = %s""",  (vk_owner_id, vk_post_id) )
+        commentResultSet = cur.fetchall()
+        for vk_comment_id, in commentResultSet:
+            download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id)
+            loadedCount += 1
+            if loadedCount % 10 == 0:
+                conn.commit()
+        cur.execute(f"""update posts set like_Load_date = %s where vk_owner_id = %s and vk_id = %s""", (datetime.now(), vk_owner_id, vk_post_id) )
+        conn.commit()
+
+    
+
 def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_id: int = 0):
     offset = 0;
     while True:
@@ -107,7 +127,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             thread_count = getJsonValue(comment_json_data, "thread/count", 0)
             comment_vk_from_id = getJsonValue(comment_json_data, "from_id", None)
             comment_date = datetime.fromtimestamp(comment_json_data["date"])
-            likes_count = getJsonValue(comment_json_data, "likes/count", 0)
+            #likes_count = getJsonValue(comment_json_data, "likes/count", 0)
 
             download_and_save_user(cur, comment_vk_from_id)
             #todo check if exists. 2. Update if was changed
@@ -125,12 +145,10 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
                              comment_post_id, comment_community_id, vk_parent_id) )
                 print(f"\tЗагружен и добавлен в БД комментарий: {comment_date}")
             else:
-                print(f"\tЗагружен комментарий (без сохранения): {comment_date}")
+                print(f"\tЗагружен комментарий (без сохранения): {comment_date}")            
 
-            
-
-            if likes_count > 0:
-                download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
+            #if likes_count > 0:
+            #    download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
             if thread_count > 0:
                 download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_vk_id)
 
@@ -173,9 +191,9 @@ def download_and_save_posts(conn, community_id, community_name, offset):
         else:
             print(f"Загружен пост (без сохранения) {post_vk_id} для {community_name}: {post_vk_id} от {post_date}")
         
-        likes_count = getJsonValue(post_json_data, "likes/count", 0)     
-        if likes_count > 0:
-            download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
+        #likes_count = getJsonValue(post_json_data, "likes/count", 0)     
+        #if likes_count > 0:
+        #    download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
 
         comments_count = getJsonValue(post_json_data, "comments/count", 0)
         if comments_count > 0:
@@ -255,6 +273,8 @@ def download_and_save_community(conn, community_name):
         if earliestPostDate < top_post_date:
             break
         offset += limit_post_count
+        
+        #download_likes_for_stored_comments(conn, 1) #интервал вызова функций надо сделать расчетным. Но - потом
 
     cur.execute("SELECT max(date), count(*) FROM posts WHERE vk_owner_id = %s", (group_id,) )
     top_post_date, post_count = cur.fetchone()
