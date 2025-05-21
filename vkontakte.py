@@ -22,7 +22,7 @@ instanceCount = len(VKTokens)
 
 def load_users_in_pause(conn):
     if needPause():  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
-        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 2)
+        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 1)
         vkfriends.download_all_friend_for_users_from_belarus_phones(conn, instanceIndex, instanceCount, 1)
         
 
@@ -191,9 +191,9 @@ def download_and_save_posts(conn, community_id, community_name, offset):
         else:
             print(f"Загружен пост (без сохранения) {post_vk_id} для {community_name}: {post_vk_id} от {post_date}")
         
-        #likes_count = getJsonValue(post_json_data, "likes/count", 0)     
-        #if likes_count > 0:
-        #    download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
+        likes_count = getJsonValue(post_json_data, "likes/count", 0)     
+        if likes_count > 0:
+            download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
 
         comments_count = getJsonValue(post_json_data, "comments/count", 0)
         if comments_count > 0:
@@ -213,8 +213,11 @@ def download_and_save_community_members(conn, vk_group_id):
     while True:
         url = f"https://api.vk.com/method/groups.getMembers?group_id={-vk_group_id}&offset={offset}&count={limit_members_count}"
         src = load_url_as_json(url)
-
         members_json_data_collection = getJsonValue(src, 'response/items', None)
+        #error_code: 15, error_msg: 'Access denied: group hide members'
+        if not members_json_data_collection:
+            return
+
         loadedCount = 0
         for vk_user_id in members_json_data_collection:
             download_and_save_user(cur, vk_user_id)
