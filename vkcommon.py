@@ -9,7 +9,7 @@ urllib3.disable_warnings()
 
 access_token = ''
 
-user_base_fields = "id,first_name,last_name,deactivated,is_closed,can_access_closed,about,activities,bdate,blacklisted,blacklisted_by_me,bookscan_post,can_see_all_post,scan_see_au         dio,can_send_friend_request,can_write_private_message,career,city,common_count,connections,contacts,counters,country,crop_photo,domain,education,exports,,followers_count,friend_status,games,has_mobile,has_photo,home_town,interests,is_favorite,is_friend,is_hidden_from_feed,is_no_index"
+user_base_fields = "id,first_name,last_name,deactivated,is_closed,can_access_closed,about,activities,bdate,blacklisted,blacklisted_by_me,bookscan_post,can_see_all_post,scan_see_audio,can_send_friend_request,can_write_private_message,career,city,common_count,connections,contacts,counters,country,crop_photo,domain,education,exports,,followers_count,friend_status,games,has_mobile,has_photo,home_town,interests,is_favorite,is_friend,is_hidden_from_feed,is_no_index,phone,email"
 user_optional_fields_L_R = "last_seen,lists,maiden_name,military,movies,music,nickname,occupation,online,personal,photo_50,photo_100,photo_200_orig,photo_200,photo_400_orig,photo_id,photo_max,photo_max_orig,quotes,relatives,relation"
 user_optional_fields_S_W = "schools,screen_name,sex,site,status,timezone,trending,tv,universities,verified,wall_default,is_verified"
 user_all_fields = f"{user_base_fields},{user_optional_fields_L_R},{user_optional_fields_S_W}"
@@ -19,6 +19,9 @@ request_likes_count = 0
 request_comments_count = 0
 request_members_count = 0
 
+usersBatchSize = 20
+
+requestInterval = 1.0
 prevCallTime = time.time()
 def load_url_as_json(url: str) -> str:
     global prevCallTime, request_likes_count, request_members_count, request_comments_count
@@ -31,31 +34,46 @@ def load_url_as_json(url: str) -> str:
         request_members_count += 1
 
     url = f'{url}&access_token={access_token}&v=5.199'
-
-    currentTime = time.time()
-    interval = currentTime - prevCallTime 
-    if (interval < 0.4):
-        time.sleep(0.4 - interval)
-    prevCallTime = currentTime
-  
+    json_data = None
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
     for i in range(5):
         try:
+            currentTime = time.time()
+            interval = currentTime - prevCallTime 
+            if (interval < requestInterval):
+                time.sleep(requestInterval - interval)
+            prevCallTime = currentTime
+
             req = requests.get(url, headers=headers, verify=False)         
             json_data = req.json()
             errorCode = getJsonValue(json_data, 'error/error_code', 0)
             errorMsg = getJsonValue(json_data, 'error/error_msg', 0)
-            if errorCode == 5:
-                print(f"Закончился срок действия токена")
-                break
+
             if errorCode != 0:
                 print(f"Ошибка VK при получении данных с кодом {errorCode}: {errorMsg}")
-                time.sleep(10)
-                if errorCode in [6, 18, 29, 30]:
-                    print(f"request_likes_count={request_likes_count}, request_comments_count={request_comments_count}, request_members_count={request_members_count}")
+
+                if errorCode == 5:
+                    print(f"Закончился срок действия токена")
                     break
+
+                if errorCode in [6, 
+                                 9, # Flood control
+                                 29 # Rate limit reached
+                                 ]:
+                    print(f"request_likes_count={request_likes_count}, request_comments_count={request_comments_count}, request_members_count={request_members_count}\n{url}")
+
+                if errorCode in [18,  # User was deleted or banned
+                                 30,  # This profile is private
+                                 ]:
+                    return json_data
+
+                if errorCode in [6, 9, 10]:
+                    time.sleep(60)
+                else:
+                    time.sleep(10)
+                
             else:
-                break
+                 return json_data
         except Exception as e:
             print(f'Невозможно получить данные для {url}. Текст ошибки: {repr(e)}')
             time.sleep(10)
@@ -70,9 +88,9 @@ def set_access_token(token: str):
 
 def needPause():
     global request_likes_count, request_comments_count, request_members_count
-    if (request_likes_count > 0) and (request_likes_count % 100 == 0):
+    if (request_likes_count > 0) and (request_likes_count % 200 == 0):
         return True
-    if (request_comments_count > 0) and (request_comments_count % 100 == 0):
+    if (request_comments_count > 0) and (request_comments_count % 200 == 0):
         return True
     if (request_members_count > 0) and (request_members_count % 20 == 0):
         return True
@@ -102,61 +120,74 @@ def getJsonValue(json, path: str, defaultValue = ''):
 
 
 
-def download_and_save_user(cur, vk_user_id):
-    if vk_user_id <= 0:
-        return
+def download_and_save_users(cur, userIds):
+    userIds = set(userIds)
+    userIds = list(userIds)
+
+    unloadedIds = []
+    for vk_user_id in userIds:
+        if vk_user_id <= 0:
+            print(f"\t. Игнорирование аккаунта {vk_user_id} - не является идентификатором пользователя") # В Базе уже есть такая запись
+            continue
+        cur.execute("""SELECT 1 FROM users WHERE vk_num_id=%s""", (vk_user_id, ) )
+        if cur.rowcount > 0:
+            print(f"\t. Игнорирование аккаунта {vk_user_id}") # В Базе уже есть такая запись
+        else:
+            unloadedIds.append(vk_user_id)
+
+    unloadedIdsBatches = [unloadedIds[i:i + usersBatchSize] for i in range(0, len(unloadedIds), usersBatchSize)]
+
+    for unloadedIdsBatch in unloadedIdsBatches:
+        unloadedIdsBatchStr = ','.join(map(str, unloadedIdsBatch))
+
+        url = f"https://api.vk.com/method/users.get?user_ids={unloadedIdsBatchStr}&fields={user_all_fields}"
+        src = load_url_as_json(url)
+
+        #check_for_errors_with_exception(datas) 
+        user_json_data_collection = getJsonValue(src, 'response', None)
+        if not user_json_data_collection:
+            return
+        for user_json_data in user_json_data_collection:
+            user_vk_num_str = getJsonValue(user_json_data, "domain")
+            user_vk_num_id = getJsonValue(user_json_data, "id")
+            user_vk_country_name = getJsonValue(user_json_data, "country/title")
+            user_vk_city_name = getJsonValue(user_json_data, "city/title")
+
+            user_vk_sex = getJsonValue(user_json_data, "sex")
+            if user_vk_sex == 1:
+                user_vk_sex = 'Ж'
+            elif user_vk_sex == 2:
+                user_vk_sex = 'М'
+            else:
+                user_vk_sex = ''
+
+            try:
+                user_date_of_birth = getJsonValue(user_json_data, "bdate")
+                user_date_of_birth = datetime.strptime(user_date_of_birth, "%d.%m.%Y")
+            except:
+                user_date_of_birth = None
+
+            user_first_name = getJsonValue(user_json_data, "first_name")    
+            user_last_name = getJsonValue(user_json_data, "last_name")
+            user_middle_name = getJsonValue(user_json_data, "middle_name")
+            user_nickname = getJsonValue(user_json_data, "nickname")
+            user_maiden_name = getJsonValue(user_json_data, "maiden_name")
+            user_is_hidden = getJsonValue(user_json_data, "is_closed")
+            user_photo_max_orig = getJsonValue(user_json_data, "photo_max_orig")
+
+            json_data = json.dumps(user_json_data)
     
-    cur.execute("""SELECT 1 FROM users WHERE vk_num_id=%s""", (vk_user_id, ) )
-    if cur.rowcount > 0:
-        print(f"\t. Игнорирование аккаунта {vk_user_id}")
-        return # В Базе уже есть такая запись
-    
-    print(f"\t+ Загрузка и добавление в БД данных аккаунта {vk_user_id}")
+            print(f"\t+ Загрузка и добавление в БД данных аккаунта {user_vk_num_id}")
 
-    url = f"https://api.vk.com/method/users.get?user_ids={vk_user_id}&fields={user_all_fields}"
-    src = load_url_as_json(url)
-
-    #check_for_errors_with_exception(datas) 
-    user_json_data = src["response"][0] 
-    
-    user_vk_num_str = getJsonValue(user_json_data, "domain")
-    user_vk_num_id = getJsonValue(user_json_data, "id") # должен быть равен vk_user_id
-    user_vk_country_name = getJsonValue(user_json_data, "country/title")
-    user_vk_city_name = getJsonValue(user_json_data, "city/title")
-
-    user_vk_sex = getJsonValue(user_json_data, "sex")
-    if user_vk_sex == 1:
-        user_vk_sex = 'Ж'
-    elif user_vk_sex == 2:
-        user_vk_sex = 'М'
-    else:
-        user_vk_sex = ''
-
-    try:
-        user_date_of_birth = getJsonValue(user_json_data, "bdate")
-        user_date_of_birth = datetime.strptime(user_date_of_birth, "%d.%m.%Y")
-    except:
-        user_date_of_birth = None
-
-    user_first_name = getJsonValue(user_json_data, "first_name")    
-    user_last_name = getJsonValue(user_json_data, "last_name")
-    user_middle_name = getJsonValue(user_json_data, "middle_name")
-    user_nickname = getJsonValue(user_json_data, "nickname")
-    user_maiden_name = getJsonValue(user_json_data, "maiden_name")
-    user_is_hidden = getJsonValue(user_json_data, "is_closed")
-    user_photo_max_orig = getJsonValue(user_json_data, "photo_max_orig")
-
-    json_data = json.dumps(user_json_data)
-    
-    #ОШИБКА:  повторяющееся значение ключа нарушает ограничение уникальности "users_vk_num_id_pk"
-    #DETAIL:  Ключ "(vk_num_id)=(29358724)" уже существует.
-    cur.execute("""INSERT INTO users 
-        (first_name, last_name, middle_name, nickname, maiden_name, 
-        vk_city_name, vk_country_name, date_of_birth, vk_num_id, vk_str_id, photo_url, vk_sex, is_hidden, json_data)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (vk_num_id) DO NOTHING""", 
-        (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
-            user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
-            user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
+            #ОШИБКА:  повторяющееся значение ключа нарушает ограничение уникальности "users_vk_num_id_pk"
+            #DETAIL:  Ключ "(vk_num_id)=(29358724)" уже существует.
+            cur.execute("""INSERT INTO users 
+                (first_name, last_name, middle_name, nickname, maiden_name, 
+                vk_city_name, vk_country_name, date_of_birth, vk_num_id, vk_str_id, photo_url, vk_sex, is_hidden, json_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (vk_num_id) DO NOTHING""", 
+                (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
+                    user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
+                    user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
 
 
 

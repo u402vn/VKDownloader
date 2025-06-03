@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from vk_auth import VKTokens, DatabaseConnectionString
 import psycopg2
-from vkcommon import set_access_token, getJsonValue, download_and_save_user, load_url_as_json, save_group_member, save_update_group, needPause
+from vkcommon import set_access_token, getJsonValue, download_and_save_users, load_url_as_json, save_group_member, save_update_group, needPause
 import subprocess
 import sys
 import time
@@ -21,9 +21,12 @@ instanceCount = len(VKTokens)
 
 
 def load_users_in_pause(conn):
-    if needPause():  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
-        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 1)
-        vkfriends.download_all_friend_for_users_from_belarus_phones(conn, instanceIndex, instanceCount, 1)
+    loadUsers = needPause()
+    if loadUsers:  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
+        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 5)
+        #vkfriends.download_users_from_db_with_leaks(conn, instanceIndex, instanceCount, 5)
+        #vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 5)
+        #vkfriends.download_all_friend_for_users_from_belarus_phones(conn, instanceIndex, instanceCount, 5)
         
 
 
@@ -36,7 +39,7 @@ def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
                     (vk_user_id, vk_owner_id, vk_post_id) )
     if cur.rowcount > 0:
         return
-    download_and_save_user(cur, vk_user_id)
+    #download_and_save_users(cur, [vk_user_id])
     cur.execute("""INSERT INTO likes (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) VALUES (%s, %s, %s, %s)""",
                 (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) )
 
@@ -51,11 +54,16 @@ def download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id):
 
         src = load_url_as_json(url)
         like_json_data_collection = getJsonValue(src, 'response/items', None)
+
+        userIds = []
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
             sender_type = getJsonValue(like_json_data, "type")
             if sender_type == "profile":
                 save_like(cur, vk_user_id, vk_owner_id, None, vk_comment_id)
+                userIds.append(vk_user_id)
+        
+        download_and_save_users(cur, userIds)
 
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
@@ -74,11 +82,15 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
 
         like_json_data_collection = getJsonValue(src, 'response/items', None)
 
+        userIds = []
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
             sender_type = getJsonValue(like_json_data, "type")
             if sender_type == "profile":
                 save_like(cur, vk_user_id, vk_owner_id, vk_post_id, None)
+                userIds.append(vk_user_id)
+
+        download_and_save_users(cur, userIds)
 
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
@@ -120,6 +132,8 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
         src = load_url_as_json(url)
         comment_json_data_collection = getJsonValue(src, 'response/items', None)
 
+        commentUserIds = []
+
         for comment_json_data in comment_json_data_collection:
             comment_vk_id = getJsonValue(comment_json_data, "id")
             comment_post_id = post_vk_id
@@ -129,8 +143,7 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             comment_date = datetime.fromtimestamp(comment_json_data["date"])
             #likes_count = getJsonValue(comment_json_data, "likes/count", 0)
 
-            download_and_save_user(cur, comment_vk_from_id)
-            #todo check if exists. 2. Update if was changed
+            commentUserIds.append(comment_vk_from_id)
    
             cur.execute("""SELECT 1 FROM comments WHERE vk_id = %s AND post_id = %s AND vk_owner_id = %s""", 
                         (comment_vk_id, comment_post_id, vk_owner_id) )
@@ -151,7 +164,8 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             #    download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
             if thread_count > 0:
                 download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_vk_id)
-
+        
+        download_and_save_users(cur, commentUserIds)
         loadedCommentsCount = len(comment_json_data_collection)
         if loadedCommentsCount < limit_comments_count:
             break
@@ -168,6 +182,7 @@ def download_and_save_posts(conn, community_id, community_name, offset):
 
     cur = conn.cursor()
     post_json_data_collection = getJsonValue(src, 'response/items', None)
+
     for post_json_data in post_json_data_collection:
         post_vk_id = getJsonValue(post_json_data, "id")
         post_vk_owner_id = getJsonValue(post_json_data, "owner_id")
@@ -219,8 +234,8 @@ def download_and_save_community_members(conn, vk_group_id):
             return
 
         loadedCount = 0
-        for vk_user_id in members_json_data_collection:
-            download_and_save_user(cur, vk_user_id)
+        download_and_save_users(cur, members_json_data_collection)
+        for vk_user_id in members_json_data_collection:            
             save_group_member(cur, vk_user_id, vk_group_id)
             loadedCount += 1
             if loadedCount % 10 == 0:
