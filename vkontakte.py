@@ -39,50 +39,47 @@ def save_like(cur, vk_user_id, vk_owner_id, vk_post_id, vk_comment_id):
                     (vk_user_id, vk_owner_id, vk_post_id) )
     if cur.rowcount > 0:
         return
-    #download_and_save_users(cur, [vk_user_id])
+
     cur.execute("""INSERT INTO likes (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) VALUES (%s, %s, %s, %s)""",
                 (vk_user_id, vk_owner_id, vk_post_id, vk_comment_id) )
 
 
 
-def download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id):
+def download_and_save_comment_likes(conn, vk_owner_id, vk_comment_id):
     print(f"+ Загрузка лайков к комментарию {vk_comment_id}")
+    cur = conn.cursor()
+    userIds = []
     offset = 0;
     while True:
         time.sleep(1)
         url = f"https://api.vk.com/method/likes.getList?type=comment&owner_id={vk_owner_id}&item_id={vk_comment_id}&extended=1&count={limit_likes_count}&offset={offset}"
-
         src = load_url_as_json(url)
         like_json_data_collection = getJsonValue(src, 'response/items', None)
-
-        userIds = []
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
             sender_type = getJsonValue(like_json_data, "type")
             if sender_type == "profile":
                 save_like(cur, vk_user_id, vk_owner_id, None, vk_comment_id)
-                userIds.append(vk_user_id)
+                userIds.append(vk_user_id)        
         
-        download_and_save_users(cur, userIds)
-
+        conn.commit()
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
             break
         offset += limit_likes_count
 
+    cur.close()
+    download_and_save_users(conn, userIds)
 
-
-def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
+def download_and_save_post_likes(conn, vk_owner_id, vk_post_id):
     print(f"+ Загрузка лайков к посту {vk_post_id}")
-    offset = 0;
+    cur = conn.cursor()
+    userIds = []
+    offset = 0
     while True:
         url = f"https://api.vk.com/method/likes.getList?type=post&owner_id={vk_owner_id}&item_id={vk_post_id}&extended=1&count={limit_likes_count}&offset={offset}"
-
         src = load_url_as_json(url)
-
         like_json_data_collection = getJsonValue(src, 'response/items', None)
-
-        userIds = []
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
             sender_type = getJsonValue(like_json_data, "type")
@@ -90,14 +87,14 @@ def download_and_save_post_likes(cur, vk_owner_id, vk_post_id):
                 save_like(cur, vk_user_id, vk_owner_id, vk_post_id, None)
                 userIds.append(vk_user_id)
 
-        download_and_save_users(cur, userIds)
-
+        conn.commit()
         loadedLikesCount = len(like_json_data_collection)
         if loadedLikesCount < limit_likes_count:
             break
         offset += limit_likes_count
-
-
+    
+    cur.close()
+    download_and_save_users(conn, userIds)
 
 
 def download_likes_for_stored_comments(conn, count = 1):
@@ -105,12 +102,12 @@ def download_likes_for_stored_comments(conn, count = 1):
     cur.execute(f"""select p.vk_owner_id, p.vk_id from posts p where p.like_Load_date is null and -p.vk_owner_id % {instanceCount} = {instanceIndex} limit {count}""")
     postResultSet = cur.fetchall()
     for vk_owner_id, vk_post_id in postResultSet:
-        download_and_save_post_likes(cur, vk_owner_id, vk_post_id)
+        download_and_save_post_likes(conn, vk_owner_id, vk_post_id)
         loadedCount = 1
         cur.execute(f"""select c.vk_id from comments c where c.vk_owner_id = %s and c.post_id = %s""",  (vk_owner_id, vk_post_id) )
         commentResultSet = cur.fetchall()
         for vk_comment_id, in commentResultSet:
-            download_and_save_comment_likes(cur, vk_owner_id, vk_comment_id)
+            download_and_save_comment_likes(conn, vk_owner_id, vk_comment_id)
             loadedCount += 1
             if loadedCount % 10 == 0:
                 conn.commit()
@@ -119,7 +116,9 @@ def download_likes_for_stored_comments(conn, count = 1):
 
     
 
-def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_id: int = 0):
+def download_and_save_comments(conn, communityId, vk_owner_id, post_vk_id, comment_id: int = 0):
+    cur = conn.cursor()
+    commentUserIds = []
     offset = 0;
     while True:
         if comment_id > 0:
@@ -131,8 +130,6 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
 
         src = load_url_as_json(url)
         comment_json_data_collection = getJsonValue(src, 'response/items', None)
-
-        commentUserIds = []
 
         for comment_json_data in comment_json_data_collection:
             comment_vk_id = getJsonValue(comment_json_data, "id")
@@ -163,15 +160,16 @@ def download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, commen
             #if likes_count > 0:
             #    download_and_save_comment_likes(cur, vk_owner_id, comment_vk_id)
             if thread_count > 0:
-                download_and_save_comments(cur, communityId, vk_owner_id, post_vk_id, comment_vk_id)
-        
-        download_and_save_users(cur, commentUserIds)
+                download_and_save_comments(conn, communityId, vk_owner_id, post_vk_id, comment_vk_id)
+
+        conn.commit()
         loadedCommentsCount = len(comment_json_data_collection)
         if loadedCommentsCount < limit_comments_count:
             break
         offset += limit_comments_count
 
-
+    cur.close()
+    download_and_save_users(conn, commentUserIds)
 
     
 def download_and_save_posts(conn, community_id, community_name, offset):
@@ -208,12 +206,12 @@ def download_and_save_posts(conn, community_id, community_name, offset):
         
         likes_count = getJsonValue(post_json_data, "likes/count", 0)     
         if likes_count > 0:
-            download_and_save_post_likes(cur, post_vk_owner_id, post_vk_id)
+            download_and_save_post_likes(conn, post_vk_owner_id, post_vk_id)
 
         comments_count = getJsonValue(post_json_data, "comments/count", 0)
         if comments_count > 0:
             print(f"+ Загрузка комментариев к посту")
-            download_and_save_comments(cur, community_id, post_vk_owner_id, post_vk_id)
+            download_and_save_comments(conn, community_id, post_vk_owner_id, post_vk_id)
         conn.commit()
 
         load_users_in_pause(conn)
@@ -234,7 +232,7 @@ def download_and_save_community_members(conn, vk_group_id):
             return
 
         loadedCount = 0
-        download_and_save_users(cur, members_json_data_collection)
+        download_and_save_users(conn, members_json_data_collection)
         for vk_user_id in members_json_data_collection:            
             save_group_member(cur, vk_user_id, vk_group_id)
             loadedCount += 1

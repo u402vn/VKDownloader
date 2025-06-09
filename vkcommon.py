@@ -120,7 +120,9 @@ def getJsonValue(json, path: str, defaultValue = ''):
 
 
 
-def download_and_save_users(cur, userIds):
+def download_and_save_users(conn, userIds):
+    cur = conn.cursor()
+
     userIds = set(userIds)
     userIds = list(userIds)
 
@@ -142,8 +144,6 @@ def download_and_save_users(cur, userIds):
 
         url = f"https://api.vk.com/method/users.get?user_ids={unloadedIdsBatchStr}&fields={user_all_fields}"
         src = load_url_as_json(url)
-
-        #check_for_errors_with_exception(datas) 
         user_json_data_collection = getJsonValue(src, 'response', None)
         if not user_json_data_collection:
             return
@@ -188,6 +188,23 @@ def download_and_save_users(cur, userIds):
                 (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
                     user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
                     user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
+            """
+            ОШИБКА:  обнаружена взаимоблокировка
+DETAIL:  Процесс 15536 ожидает в режиме ShareLock блокировку "транзакция 5336387"; заблокирован процессом 4660.
+Процесс 4660 ожидает в режиме ShareLock блокировку "транзакция 5336491"; заблокирован процессом 15536.
+
+1. Передавать сюда коннекшен и делать коммиты
+2. 
+try
+
+except
+
+для блока for user_json_data in user_json_data_collection:
+
+При ошибке - повторить все снова
+            """
+        conn.commit()
+    cur.close()
 
 
 

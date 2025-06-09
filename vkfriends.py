@@ -3,7 +3,7 @@ import psycopg2
 from vkcommon import getJsonValue, download_and_save_users, load_url_as_json, save_update_group, save_group_member
 from vk_auth import DatabaseConnectionString
 
-limit_friends_count = 99
+limit_friends_count = 1000
 limit_subscriptions_count = 200
 
 def markUserLastReview(conn, userId):
@@ -22,6 +22,7 @@ def download_user_friends(conn, userId):
     offset = 0
     while True:
         url = f"https://api.vk.com/method/friends.get?user_id={userId}&offset={offset}&count={limit_friends_count}"
+        #url = f"https://api.vk.com/method/friends.get?user_id={userId}&offset={offset}"
         src = load_url_as_json(url)
         friend_ids_collection = getJsonValue(src, 'response/items', None)
         if not friend_ids_collection:
@@ -44,7 +45,7 @@ def download_user_friends(conn, userId):
             break
         offset += limit_friends_count
 
-    download_and_save_users(cur, allFriends)
+    download_and_save_users(conn, allFriends)
 
     conn.commit()
 
@@ -119,7 +120,7 @@ def download_all_friend_for_users_from_belarus_phones(conn, instanceIndex: int, 
     rows = cur.fetchall()
 
     userIds = [row[0] for row in rows]
-    download_and_save_users(cur, userIds)
+    download_and_save_users(conn, userIds)
     conn.commit()
 
     for userId, in rows:
