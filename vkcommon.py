@@ -18,6 +18,8 @@ user_all_fields = f"{user_base_fields},{user_optional_fields_L_R},{user_optional
 request_likes_count = 0
 request_comments_count = 0
 request_members_count = 0
+intervalStart = time.time()
+wasPauseNeeded = False
 
 usersBatchSize = 20
 
@@ -33,7 +35,7 @@ def load_url_as_json(url: str) -> str:
     elif 'groups.getMembers' in url:
         request_members_count += 1
 
-    url = f'{url}&access_token={access_token}&v=5.199'
+    url = f'{url}&access_token={access_token}&v=5.195'
     json_data = None
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
     for i in range(5):
@@ -87,15 +89,29 @@ def set_access_token(token: str):
 
 
 def needPause():
-    global request_likes_count, request_comments_count, request_members_count
-    if (request_likes_count > 0) and (request_likes_count % 200 == 0):
-        return True
-    if (request_comments_count > 0) and (request_comments_count % 200 == 0):
-        return True
-    if (request_members_count > 0) and (request_members_count % 20 == 0):
-        return True
+    global request_likes_count, request_comments_count, request_members_count, intervalStart, wasPauseNeeded
 
-    return False
+    intervalLength = time.time() - intervalStart
+
+    def tooMatchRequestsPerInterval(count, dayCount):        
+        result = (count * 3600 * 24) / intervalLength >= dayCount
+        return result
+    
+    requestPerDayLimit = 20000        
+
+    needPause = tooMatchRequestsPerInterval(request_likes_count, requestPerDayLimit) \
+        or tooMatchRequestsPerInterval(request_comments_count, requestPerDayLimit) \
+        or tooMatchRequestsPerInterval(request_members_count, requestPerDayLimit)
+    if not needPause and wasPauseNeeded and (intervalLength > 300):
+        request_likes_count = 0
+        request_comments_count = 0
+        request_members_count = 0
+        intervalStart = time.time()
+        wasPauseNeeded = False
+    elif needPause:
+        wasPauseNeeded = True
+
+    return needPause
 
      
 def getJsonValue(json, path: str, defaultValue = ''):
@@ -144,6 +160,8 @@ def download_and_save_users(conn, userIds):
 
         url = f"https://api.vk.com/method/users.get?user_ids={unloadedIdsBatchStr}&fields={user_all_fields}"
         src = load_url_as_json(url)
+
+
         user_json_data_collection = getJsonValue(src, 'response', None)
         if not user_json_data_collection:
             return
@@ -203,7 +221,7 @@ except
 
 При ошибке - повторить все снова
             """
-        conn.commit()
+    conn.commit()
     cur.close()
 
 

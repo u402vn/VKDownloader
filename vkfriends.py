@@ -28,16 +28,12 @@ def download_user_friends(conn, userId):
         if not friend_ids_collection:
             break
         allFriends += friend_ids_collection
-        loadedCount = 0
         if friend_ids_collection:
             for friendId in friend_ids_collection:                
                 cur.execute("""SELECT 1 FROM UserFriends f WHERE (f.vk_user_id1 = %s AND f.vk_user_id2 = %s) or (f.vk_user_id1 = %s AND f.vk_user_id2 = %s)""", 
                     (userId, friendId, friendId, userId) )
                 if cur.rowcount == 0:
                     cur.execute("INSERT INTO UserFriends (vk_user_id1, vk_user_id2) VALUES (%s, %s)", (userId, friendId))
-                    loadedCount += 1
-                    if loadedCount % 10 == 0:
-                        conn.commit()        
 
         conn.commit()
         loadedFriendsCount = len(friend_ids_collection) if friend_ids_collection else 0
@@ -78,7 +74,6 @@ def download_user_communities(conn, userId):
         src = load_url_as_json(url)
         group_json_data_collection = getJsonValue(src, 'response/groups', None)
 
-        loadedCount = 0
         if group_json_data_collection:
             for group_json_data in group_json_data_collection:            
                 vk_group_id = - getJsonValue(group_json_data, 'id', 0)
@@ -87,11 +82,7 @@ def download_user_communities(conn, userId):
                 save_update_group(cur, vk_group_id, screen_name, name)
                 #save_group_member(cur, userId, vk_group_id)
 
-                loadedCount += 1
-                if loadedCount % 10 == 0:
-                    conn.commit()
-            
-    conn.commit()
+        conn.commit()
 
 
 

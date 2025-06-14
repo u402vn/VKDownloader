@@ -20,10 +20,12 @@ instanceCount = len(VKTokens)
 
 
 
-def load_users_in_pause(conn):
-    loadUsers = needPause()
-    if loadUsers:  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
-        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 5)
+def load_users_in_pause(conn):    
+    while True:  # просто задержка, чтобы не было бана по загрузке комментариев и лайков
+        doPause = needPause()
+        if not doPause:
+            break
+        vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 1)
         #vkfriends.download_users_from_db_with_leaks(conn, instanceIndex, instanceCount, 5)
         #vkfriends.download_all_friend_for_users_with_comments(conn, instanceIndex, instanceCount, 5)
         #vkfriends.download_all_friend_for_users_from_belarus_phones(conn, instanceIndex, instanceCount, 5)
@@ -80,6 +82,8 @@ def download_and_save_post_likes(conn, vk_owner_id, vk_post_id):
         url = f"https://api.vk.com/method/likes.getList?type=post&owner_id={vk_owner_id}&item_id={vk_post_id}&extended=1&count={limit_likes_count}&offset={offset}"
         src = load_url_as_json(url)
         like_json_data_collection = getJsonValue(src, 'response/items', None)
+        if not like_json_data_collection:
+            return
         for like_json_data in like_json_data_collection:
             vk_user_id = getJsonValue(like_json_data, "id", 0)
             sender_type = getJsonValue(like_json_data, "type")
@@ -103,14 +107,11 @@ def download_likes_for_stored_comments(conn, count = 1):
     postResultSet = cur.fetchall()
     for vk_owner_id, vk_post_id in postResultSet:
         download_and_save_post_likes(conn, vk_owner_id, vk_post_id)
-        loadedCount = 1
         cur.execute(f"""select c.vk_id from comments c where c.vk_owner_id = %s and c.post_id = %s""",  (vk_owner_id, vk_post_id) )
         commentResultSet = cur.fetchall()
         for vk_comment_id, in commentResultSet:
             download_and_save_comment_likes(conn, vk_owner_id, vk_comment_id)
-            loadedCount += 1
-            if loadedCount % 10 == 0:
-                conn.commit()
+
         cur.execute(f"""update posts set like_Load_date = %s where vk_owner_id = %s and vk_id = %s""", (datetime.now(), vk_owner_id, vk_post_id) )
         conn.commit()
 
@@ -231,13 +232,9 @@ def download_and_save_community_members(conn, vk_group_id):
         if not members_json_data_collection:
             return
 
-        loadedCount = 0
         download_and_save_users(conn, members_json_data_collection)
         for vk_user_id in members_json_data_collection:            
             save_group_member(cur, vk_user_id, vk_group_id)
-            loadedCount += 1
-            if loadedCount % 10 == 0:
-                conn.commit()
         
         conn.commit()
         loadedMembersCount = len(members_json_data_collection)
@@ -323,7 +320,11 @@ def startDownload():
     access_token = VKTokens[instanceIndex]
     set_access_token(access_token)
     while True:
-        conn = psycopg2.connect(DatabaseConnectionString)
+        connectionString = DatabaseConnectionString
+        if not ('application_name' in connectionString):
+            connectionString = f"""{connectionString} application_name='VKDownloder{instanceIndex}'"""
+        conn = psycopg2.connect(connectionString)
+        conn.autocommit = False
         download_and_save_communities(conn)
     #vkfriends.main()
 
@@ -334,8 +335,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--instanceindex', default = 0, type = int)
     parameters, unknownParameters  = parser.parse_known_args(sys.argv[1:])
-    instanceIndex = parameters.instanceindex
-    
+    instanceIndex = parameters.instanceindex    
 
     ctypes.windll.kernel32.SetConsoleTitleW(f"VK Downloder #{instanceIndex}")
 
