@@ -313,7 +313,10 @@ def download_and_save_communities(conn):
 
     rows = cur.fetchall()
     for community_name, in rows:
-        download_and_save_community(conn, community_name)
+        try:
+            download_and_save_community(conn, community_name)
+        except Exception as e:
+            print(e)
 
 
 def startDownload():
@@ -344,8 +347,9 @@ def main():
             command = f'"{sys.executable}" vkontakte.py --instanceindex {i}'
             subprocess.Popen(command, creationflags = subprocess.CREATE_NEW_CONSOLE)
 
-    startDownload()    
+    startDownload()
 
+    input("Press Enter to exit...")
 
 
 if __name__ == '__main__':

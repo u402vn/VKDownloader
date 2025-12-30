@@ -1,9 +1,8 @@
 ﻿from datetime import datetime
-import psycopg2
 from vkcommon import getJsonValue, download_and_save_users, load_url_as_json, save_update_group, save_group_member
-from vk_auth import DatabaseConnectionString
 
-limit_friends_count = 1000
+
+limit_friends_count = 1200
 limit_subscriptions_count = 200
 
 def markUserLastReview(conn, userId):
@@ -19,6 +18,19 @@ def download_user_friends(conn, userId):
     print(f"Загрузка данных друзей аккаунта {userId}")
 
     allFriends = []
+
+    #load family
+    cur.execute("""select json_data from users u where u.vk_num_id = %s""", (userId,) )
+    resultSet = cur.fetchall()
+    for userData, in resultSet:
+        if 'relatives' in userData:
+            relatives = userData['relatives']
+            for relative in relatives:
+                relativeId = relative['id']
+                if relativeId > 0:
+                    allFriends.append(relativeId)
+
+    #load friends
     offset = 0
     while True:
         url = f"https://api.vk.com/method/friends.get?user_id={userId}&offset={offset}&count={limit_friends_count}"
@@ -104,7 +116,7 @@ def download_all_friend_for_users_from_belarus_phones(conn, instanceIndex: int, 
 
     cur.execute(f"""select l.vk_user_id from data_leaks l
         left outer join users u on l.vk_user_id = u.vk_num_id
-        where (l.phone like '7529%' or l.phone like '7533%' or l.phone like '7544%' or l.phone like '7525%')
+        where (l.phone like '37529%' or l.phone like '37533%' or l.phone like '37544%' or l.phone like '37525%')
         and u.vk_num_id is null
         and l.vk_user_id % {instanceCount} = {instanceIndex}
         limit {loadCount}""")

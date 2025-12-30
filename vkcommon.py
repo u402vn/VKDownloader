@@ -26,7 +26,7 @@ usersBatchSize = 20
 requestInterval = 1.0
 prevCallTime = time.time()
 def load_url_as_json(url: str) -> str:
-    global prevCallTime, request_likes_count, request_members_count, request_comments_count
+    global requestInterval, prevCallTime, request_likes_count, request_members_count, request_comments_count
 
     if 'likes.getList' in url:
         request_likes_count += 1
@@ -93,11 +93,14 @@ def needPause():
 
     intervalLength = time.time() - intervalStart
 
-    def tooMatchRequestsPerInterval(count, dayCount):        
-        result = (count * 3600 * 24) / intervalLength >= dayCount
+    def tooMatchRequestsPerInterval(count, dayCount):
+        if intervalLength == 0:
+            result = False
+        else:
+            result = (count * 3600 * 24) / intervalLength >= dayCount
         return result
     
-    requestPerDayLimit = 20000        
+    requestPerDayLimit = 20000
 
     needPause = tooMatchRequestsPerInterval(request_likes_count, requestPerDayLimit) \
         or tooMatchRequestsPerInterval(request_comments_count, requestPerDayLimit) \
@@ -202,14 +205,26 @@ def download_and_save_users(conn, userIds):
             cur.execute("""INSERT INTO users 
                 (first_name, last_name, middle_name, nickname, maiden_name, 
                 vk_city_name, vk_country_name, date_of_birth, vk_num_id, vk_str_id, photo_url, vk_sex, is_hidden, json_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (vk_num_id) DO NOTHING""", 
+                SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s                 
+                    WHERE NOT EXISTS (SELECT vk_num_id FROM users WHERE vk_num_id = %s) 
+                ON CONFLICT (vk_num_id) DO NOTHING
+                """, 
                 (user_first_name, user_last_name, user_middle_name, user_nickname, user_maiden_name,
                     user_vk_city_name, user_vk_country_name, user_date_of_birth, user_vk_num_id, user_vk_num_str, 
-                    user_photo_max_orig, user_vk_sex, user_is_hidden, json_data) )
+                    user_photo_max_orig, user_vk_sex, user_is_hidden, json_data, 
+                    user_vk_num_id) )
             """
             ОШИБКА:  обнаружена взаимоблокировка
 DETAIL:  Процесс 15536 ожидает в режиме ShareLock блокировку "транзакция 5336387"; заблокирован процессом 4660.
 Процесс 4660 ожидает в режиме ShareLock блокировку "транзакция 5336491"; заблокирован процессом 15536.
+
+
+psycopg2.errors.DeadlockDetected: ОШИБКА:  обнаружена взаимоблокировка
+DETAIL:  Процесс 21488 ожидает в режиме ShareLock блокировку "транзакция 11799653"; заблокирован процессом 16020.
+Процесс 16020 ожидает в режиме ShareLock блокировку "транзакция 11799614"; заблокирован процессом 21488.
+HINT:  Подробности запроса смотрите в протоколе сервера.
+CONTEXT:  при добавлении кортежа индекса (281681,10) в отношении "users"
+
 
 1. Передавать сюда коннекшен и делать коммиты
 2. 
@@ -221,6 +236,8 @@ except
 
 При ошибке - повторить все снова
             """
+        conn.commit()
+
     conn.commit()
     cur.close()
 
